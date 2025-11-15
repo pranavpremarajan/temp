@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const CHAT_FILE = path.join(__dirname, "chat_history.txt");
-const ACCESS_CODE = "1234"; // <--- hardcoded login code
+const ACCESS_CODE = "884837"; // <--- hardcoded login code
 
 // Read history
 function loadHistory() {
