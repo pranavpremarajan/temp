@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const CHAT_FILE = path.join(__dirname, "chat_history.txt");
-const ACCESS_CODE = "884837"; // <-- hardcoded authentication code
+const ACCESS_CODE = "1234"; // <--- hardcoded login code
 
 // Read history
 function loadHistory() {
@@ -30,8 +30,8 @@ app.get("/auth", (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Auth</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body { font-family:sans-serif; text-align:center; margin-top:50px; }
 input { padding:10px; width:200px; }
@@ -39,12 +39,14 @@ button { padding:10px; margin-top:10px; cursor:pointer; }
 </style>
 </head>
 <body>
+
 <h2>Enter Access Code</h2>
 <form action="/" method="GET">
     <input type="password" name="code" placeholder="Access code">
     <br>
     <button type="submit">Enter</button>
 </form>
+
 </body>
 </html>
 `);
@@ -57,12 +59,13 @@ app.get("/", (req, res) => {
     }
 
     const history = loadHistory();
+
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
-<title>.</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body { font-family:sans-serif; }
 .chat-box { border:1px solid #ccc;padding:10px;max-width:600px;margin:20px auto; }
@@ -73,10 +76,12 @@ button { padding:10px;margin-top:10px;cursor:pointer; }
 </style>
 </head>
 <body>
+
 <div class="chat-box">
-<h2>.</h2>
+<h2>Chat</h2>
+
 <ul class="messages" id="messages">
-${history.map(m => `<li>${m}</li>`).join("")}
+    ${history.map(m => `<li>${m}</li>`).join("")}
 </ul>
 
 <textarea id="msg" rows="3" placeholder="Type message..."></textarea>
@@ -85,33 +90,77 @@ ${history.map(m => `<li>${m}</li>`).join("")}
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
+    // ---- USER IDENTIFIER ----
+    let USER_ID = localStorage.getItem("chat_id");
+    if (!USER_ID) {
+        USER_ID = Math.random().toString(36).substring(2, 8).toUpperCase();
+        localStorage.setItem("chat_id", USER_ID);
+    }
+
+    // ---- USER COLOR ----
+    let USER_COLOR = localStorage.getItem("chat_color");
+    if (!USER_COLOR) {
+        USER_COLOR = "hsl(" + Math.floor(Math.random() * 360) + ", 70%, 60%)";
+        localStorage.setItem("chat_color", USER_COLOR);
+    }
+
     var socket = io();
 
     function sendMsg() {
-        var m = document.getElementById("msg").value.trim();
-        if (!m) return;
-        socket.emit("message", m);
+        var text = document.getElementById("msg").value.trim();
+        if (!text) return;
+
+        socket.emit("message", {
+            user: USER_ID,
+            color: USER_COLOR,
+            text: text
+        });
+
         document.getElementById("msg").value = "";
     }
 
-    socket.on("message", function(msg) {
+    socket.on("message", function(data) {
         var li = document.createElement("li");
-        li.textContent = msg;
+
+        // Colored username tag
+        var userSpan = document.createElement("span");
+        userSpan.textContent = "[" + data.user + "] ";
+        userSpan.style.color = data.color;
+        userSpan.style.fontWeight = "bold";
+
+        var msgSpan = document.createElement("span");
+        msgSpan.textContent = data.text;
+
+        li.appendChild(userSpan);
+        li.appendChild(msgSpan);
+
         document.getElementById("messages").appendChild(li);
+
         var box = document.getElementById("messages");
         box.scrollTop = box.scrollHeight;
     });
 </script>
+
 </body>
 </html>
 `);
 });
 
+// --- SOCKET HANDLING ---
 io.on("connection", socket => {
-    socket.on("message", msg => {
-        saveMessage(msg);
-        io.emit("message", msg);
+    socket.on("message", data => {
+        const line = `[${data.user}] ${data.text}`;
+        saveMessage(line);
+
+        // Broadcast original data including color
+        io.emit("message", {
+            user: data.user,
+            color: data.color,
+            text: data.text
+        });
     });
 });
 
-server.listen(3000, () => console.log("Chat running at http://localhost:3000"));
+server.listen(3000, () =>
+    console.log("Chat running at http://localhost:3000")
+);
