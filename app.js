@@ -29,7 +29,8 @@ app.get("/", (req, res) => {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Realtime Chat</title>
+<title>.</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body { font-family:sans-serif; }
 .chat-box { border:1px solid #ccc;padding:10px;max-width:600px;margin:20px auto; }
@@ -41,7 +42,7 @@ button { padding:10px;margin-top:10px;cursor:pointer; }
 </head>
 <body>
 <div class="chat-box">
-<h2>Realtime Chat</h2>
+<h2>.</h2>
 <ul class="messages" id="messages">
 ${history.map(m => `<li>${m}</li>`).join("")}
 </ul>
