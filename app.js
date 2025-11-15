@@ -3,28 +3,57 @@ const path = require("path");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { Pool } = require("pg");
 
+// -----------------------------
+// DATABASE CONNECTION
+// -----------------------------
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false } // required for most cloud DBs
+});
+
+// Ensure table exists
+async function initDB() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id SERIAL PRIMARY KEY,
+            user_id VARCHAR(20),
+            message TEXT,
+            color VARCHAR(20),
+            ts TIMESTAMP DEFAULT NOW()
+        );
+    `);
+}
+initDB();
+
+// DB helpers
+async function loadHistory() {
+    const result = await pool.query(
+        "SELECT user_id, message, color FROM chat_messages ORDER BY id"
+    );
+    return result.rows;
+}
+
+async function saveMessage(data) {
+    await pool.query(
+        "INSERT INTO chat_messages (user_id, message, color) VALUES ($1, $2, $3)",
+        [data.user, data.text, data.color]
+    );
+}
+
+// -----------------------------
+// SERVER + SOCKET
+// -----------------------------
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const CHAT_FILE = path.join(__dirname, "chat_history.txt");
-const ACCESS_CODE = "884837"; // <--- hardcoded login code
+const ACCESS_CODE = "884837"; // login code
 
-// Read history
-function loadHistory() {
-    if (!fs.existsSync(CHAT_FILE)) return [];
-    return fs.readFileSync(CHAT_FILE, "utf8")
-        .split("\n")
-        .filter(line => line.trim() !== "");
-}
-
-// Append message
-function saveMessage(msg) {
-    fs.appendFileSync(CHAT_FILE, msg + "\n");
-}
-
-// --- AUTH PAGE ---
+// -----------------------------
+// AUTH PAGE
+// -----------------------------
 app.get("/auth", (req, res) => {
     res.send(`
 <!DOCTYPE html>
@@ -49,16 +78,18 @@ button { padding:10px; margin-top:10px; cursor:pointer; }
 
 </body>
 </html>
-`);
+    `);
 });
 
-// --- CHAT PAGE ---
-app.get("/", (req, res) => {
+// -----------------------------
+// CHAT PAGE
+// -----------------------------
+app.get("/", async (req, res) => {
     if (req.query.code !== ACCESS_CODE) {
         return res.redirect("/auth");
     }
 
-    const history = loadHistory();
+    const history = await loadHistory();
 
     res.send(`
 <!DOCTYPE html>
@@ -81,7 +112,16 @@ button { padding:10px;margin-top:10px;cursor:pointer; }
 <h2>Chat</h2>
 
 <ul class="messages" id="messages">
-    ${history.map(m => `<li>${m}</li>`).join("")}
+    ${history
+        .map(
+            m => `
+        <li>
+            <span style="color:${m.color};font-weight:bold">[${m.user_id}] </span>
+            <span>${m.message}</span>
+        </li>
+        `
+        )
+        .join("")}
 </ul>
 
 <textarea id="msg" rows="3" placeholder="Type message..."></textarea>
@@ -122,7 +162,6 @@ button { padding:10px;margin-top:10px;cursor:pointer; }
     socket.on("message", function(data) {
         var li = document.createElement("li");
 
-        // Colored username tag
         var userSpan = document.createElement("span");
         userSpan.textContent = "[" + data.user + "] ";
         userSpan.style.color = data.color;
@@ -143,24 +182,22 @@ button { padding:10px;margin-top:10px;cursor:pointer; }
 
 </body>
 </html>
-`);
+    `);
 });
 
-// --- SOCKET HANDLING ---
+// -----------------------------
+// SOCKET.IO MESSAGE HANDLING
+// -----------------------------
 io.on("connection", socket => {
-    socket.on("message", data => {
-        const line = `[${data.user}] ${data.text}`;
-        saveMessage(line);
-
-        // Broadcast original data including color
-        io.emit("message", {
-            user: data.user,
-            color: data.color,
-            text: data.text
-        });
+    socket.on("message", async data => {
+        await saveMessage(data);
+        io.emit("message", data);
     });
 });
 
+// -----------------------------
+// START SERVER
+// -----------------------------
 server.listen(3000, () =>
     console.log("Chat running at http://localhost:3000")
 );
