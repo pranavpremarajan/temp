@@ -1,102 +1,84 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
-const port = 3000;
+const server = http.createServer(app);
+const io = new Server(server);
 
-// File where chat history is stored
-const CHAT_FILE = path.join(__dirname, 'chat_history.txt');
+const CHAT_FILE = path.join(__dirname, "chat_history.txt");
 
-// Middleware to parse URL-encoded data (for form submissions)
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));  // For serving static files like CSS/JS
-
-// Function to read chat history from the file
-function readChatHistory() {
-  if (fs.existsSync(CHAT_FILE)) {
-    return fs.readFileSync(CHAT_FILE, 'utf8').split('\n').filter(line => line.trim() !== '');
-  }
-  return [];
+// Read history
+function loadHistory() {
+    if (!fs.existsSync(CHAT_FILE)) return [];
+    return fs.readFileSync(CHAT_FILE, "utf8")
+        .split("\n")
+        .filter(line => line.trim() !== "");
 }
 
-// Function to write a new message to the chat file
-function writeMessage(message) {
-  fs.appendFileSync(CHAT_FILE, message + '\n');
+// Append message
+function saveMessage(msg) {
+    fs.appendFileSync(CHAT_FILE, msg + "\n");
 }
 
-// Serve the chat interface
-app.get('/', (req, res) => {
-  const chatHistory = readChatHistory();
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Minimal Chat</title>
-        <style>
-            body { font-family: Arial, sans-serif; }
-            .chat-box { border: 1px solid #ccc; padding: 10px; max-width: 600px; margin: 20px auto; }
-            .messages { list-style: none; padding: 0; height: 300px; overflow-y: scroll; margin-bottom: 10px; }
-            .messages li { padding: 5px; border-bottom: 1px solid #eee; }
-            .input-box { width: 100%; padding: 10px; border: 1px solid #ccc; }
-            .button { padding: 10px 15px; margin-top: 10px; cursor: pointer; }
-        </style>
-    </head>
-    <body>
-        <div class="chat-box">
-            <h2>Chat</h2>
-            <ul class="messages" id="messages">
-                ${chatHistory.map(msg => `<li>${msg}</li>`).join('')}
-            </ul>
-            <textarea id="messageInput" class="input-box" rows="4" placeholder="Type your message..."></textarea>
-            <button class="button" id="sendBtn">Send</button>
-        </div>
+app.get("/", (req, res) => {
+    const history = loadHistory();
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Realtime Chat</title>
+<style>
+body { font-family:sans-serif; }
+.chat-box { border:1px solid #ccc;padding:10px;max-width:600px;margin:20px auto; }
+.messages { list-style:none;padding:0;height:300px;overflow-y:auto;border:1px solid #ddd;margin-bottom:10px; }
+.messages li { padding:5px;border-bottom:1px solid #eee; }
+textarea { width:100%;padding:10px; }
+button { padding:10px;margin-top:10px;cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="chat-box">
+<h2>Realtime Chat</h2>
+<ul class="messages" id="messages">
+${history.map(m => `<li>${m}</li>`).join("")}
+</ul>
 
-        <script>
-            document.getElementById('sendBtn').addEventListener('click', function() {
-                var message = document.getElementById('messageInput').value.trim();
-                if (message !== "") {
-                    fetch('/send_message', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: 'message=' + encodeURIComponent(message)
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.status === "success") {
-                            var li = document.createElement('li');
-                            li.textContent = message;
-                            document.getElementById('messages').appendChild(li);
-                            document.getElementById('messageInput').value = '';
-                            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-                        }
-                    });
-                }
-            });
+<textarea id="msg" rows="3" placeholder="Type message..."></textarea>
+<button onclick="sendMsg()">Send</button>
+</div>
 
-            // Automatically scroll to the bottom of the chat
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-        </script>
-    </body>
-    </html>
-  `;
-  res.send(htmlContent);
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    var socket = io();
+
+    function sendMsg() {
+        var m = document.getElementById("msg").value.trim();
+        if (!m) return;
+        socket.emit("message", m);
+        document.getElementById("msg").value = "";
+    }
+
+    socket.on("message", function(msg) {
+        var li = document.createElement("li");
+        li.textContent = msg;
+        document.getElementById("messages").appendChild(li);
+        var box = document.getElementById("messages");
+        box.scrollTop = box.scrollHeight;
+    });
+</script>
+</body>
+</html>
+`);
 });
 
-// Handle new message submission
-app.post('/send_message', (req, res) => {
-  const message = req.body.message;
-  if (message) {
-    writeMessage(message);
-  }
-  res.json({ status: 'success' });
+io.on("connection", socket => {
+    socket.on("message", msg => {
+        saveMessage(msg);
+        io.emit("message", msg); // send to everyone
+    });
 });
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+server.listen(3000, () => console.log("Chat running at http://localhost:3000"));
