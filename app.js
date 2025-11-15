@@ -9,6 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const CHAT_FILE = path.join(__dirname, "chat_history.txt");
+const ACCESS_CODE = "884837"; // <-- hardcoded authentication code
 
 // Read history
 function loadHistory() {
@@ -23,14 +24,45 @@ function saveMessage(msg) {
     fs.appendFileSync(CHAT_FILE, msg + "\n");
 }
 
+// --- AUTH PAGE ---
+app.get("/auth", (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>Auth</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family:sans-serif; text-align:center; margin-top:50px; }
+input { padding:10px; width:200px; }
+button { padding:10px; margin-top:10px; cursor:pointer; }
+</style>
+</head>
+<body>
+<h2>Enter Access Code</h2>
+<form action="/" method="GET">
+    <input type="password" name="code" placeholder="Access code">
+    <br>
+    <button type="submit">Enter</button>
+</form>
+</body>
+</html>
+`);
+});
+
+// --- CHAT PAGE ---
 app.get("/", (req, res) => {
+    if (req.query.code !== ACCESS_CODE) {
+        return res.redirect("/auth");
+    }
+
     const history = loadHistory();
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
 <title>.</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body { font-family:sans-serif; }
 .chat-box { border:1px solid #ccc;padding:10px;max-width:600px;margin:20px auto; }
@@ -78,7 +110,7 @@ ${history.map(m => `<li>${m}</li>`).join("")}
 io.on("connection", socket => {
     socket.on("message", msg => {
         saveMessage(msg);
-        io.emit("message", msg); // send to everyone
+        io.emit("message", msg);
     });
 });
 
